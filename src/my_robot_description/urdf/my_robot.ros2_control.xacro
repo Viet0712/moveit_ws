@@ -1,9 +1,36 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:arg name="use_mock_component" default="true"/>
     <ros2_control name="Amr" type="system">
-        <hardware>
-            <!-- By default, set up controllers for simulation. This won't work on real hardware -->
+        <!-- <hardware>
+          <xacro:if value="$(arg use_mock_component)">
             <plugin>mock_components/GenericSystem</plugin>
+          </xacro:if>
+          <xacro:unless value="$(arg use_mock_component)">
+            <plugin>arm_hardware/ArmHardwareInterface</plugin>
+            <param name="joint1_motor_id">10</param>
+            <param name="joint2_motor_id">20</param>
+            <param name="dynamixel_port">/dev/ttyACM0</param>
+          </xacro:unless>
+      </hardware> -->
+        <hardware>
+            <xacro:if value="$(arg use_mock_component)">
+                <plugin>mock_components/GenericSystem</plugin>
+            </xacro:if>
+            <xacro:unless value="$(arg use_mock_component)">
+                <plugin>arm_hardware/ArmHardwareInterface</plugin>
+
+                <param name="serial_port">/dev/ttyUSB0</param>
+                <param name="baudrate">115200</param>
+
+                <param name="joint1_channel">0</param>
+                <param name="joint2_channel">1</param>
+                <param name="joint3_channel">2</param>
+                <param name="joint4_channel">3</param>
+                <param name="joint5_channel">4</param>
+                <param name="joint6_channel">5</param>
+                <param name="gripper_channel">6</param>
+            </xacro:unless>
         </hardware>
         <joint name="joint1">
             <command_interface name="position"/>
