@@ -113,6 +113,33 @@ public:
 
         writeString(ss.str());
     }
+    void setGripperPositionMeter(int channel, double position_m)
+    {
+        const double min_m = 0.0;
+        const double max_m = 0.06;
+
+        const double close_deg = 20.;
+        const double open_deg = 110.0;
+
+        if (position_m < min_m)
+        {
+            position_m = min_m;
+        }
+
+        if (position_m > max_m)
+        {
+            position_m = max_m;
+        }
+
+        double ratio = (position_m - min_m) / (max_m - min_m);
+
+        double degree = close_deg + ratio * (open_deg - close_deg);
+
+        std::ostringstream ss;
+        ss << "S," << channel << "," << degree << "\n";
+
+        writeString(ss.str());
+    }
 
 private:
     std::string port_;
