@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'test_moveit = my_robot_commander_py.test_moveit:main',
-            'commander = my_robot_commander_py.commander_template:main'
+            'commander = my_robot_commander_py.commander_template:main',
+            'commander_humble = my_robot_commander_py.commander_template_humble:main'
         ],
     },
 )
