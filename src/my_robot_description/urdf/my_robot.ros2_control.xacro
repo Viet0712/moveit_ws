@@ -20,16 +20,16 @@
             <xacro:unless value="$(arg use_mock_component)">
                 <plugin>arm_hardware/ArmHardwareInterface</plugin>
 
-                <param name="serial_port">/dev/ttyUSB0</param>
+                <param name="serial_port">/dev/ttyACM0</param>
                 <param name="baudrate">115200</param>
 
-                <param name="joint1_channel">0</param>
-                <param name="joint2_channel">1</param>
-                <param name="joint3_channel">2</param>
-                <param name="joint4_channel">3</param>
-                <param name="joint5_channel">4</param>
-                <param name="joint6_channel">5</param>
-                <param name="gripper_channel">6</param>
+                <param name="joint1_channel">1</param>
+                <param name="joint2_channel">2</param>
+                <param name="joint3_channel">3</param>
+                <param name="joint4_channel">4</param>
+                <param name="joint5_channel">5</param>
+                <param name="joint6_channel">6</param>
+                <param name="gripper_channel">0</param>
             </xacro:unless>
         </hardware>
         <joint name="joint1">
