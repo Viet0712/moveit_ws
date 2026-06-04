@@ -16,8 +16,8 @@
 class ServoSerialDriver
 {
 public:
-    ServoSerialDriver(const std::string & port, int baudrate)
-    : port_(port), baudrate_(baudrate), serial_fd_(-1)
+    ServoSerialDriver(const std::string &port, int baudrate)
+        : port_(port), baudrate_(baudrate), serial_fd_(-1)
     {
     }
 
@@ -30,13 +30,15 @@ public:
     {
         serial_fd_ = open(port_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
 
-        if (serial_fd_ < 0) {
+        if (serial_fd_ < 0)
+        {
             std::cerr << "Failed to open serial port: " << port_
                       << " error: " << strerror(errno) << std::endl;
             return -1;
         }
 
-        if (!configurePort(baudrate_)) {
+        if (!configurePort(baudrate_))
+        {
             std::cerr << "Failed to configure serial port." << std::endl;
             closePort();
             return -1;
@@ -50,7 +52,8 @@ public:
 
     void closePort()
     {
-        if (serial_fd_ >= 0) {
+        if (serial_fd_ >= 0)
+        {
             close(serial_fd_);
             serial_fd_ = -1;
         }
@@ -61,11 +64,13 @@ public:
         double degree = radianToDegree(radian);
 
         // Servo thường giới hạn 0–180 độ
-        if (degree < 0.0) {
+        if (degree < 0.0)
+        {
             degree = 0.0;
         }
 
-        if (degree > 180.0) {
+        if (degree > 180.0)
+        {
             degree = 180.0;
         }
 
@@ -88,7 +93,8 @@ public:
          * Sửa hàm này để đọc vị trí thật từ ESP32.
          */
 
-        if (last_command_rad_.find(channel) == last_command_rad_.end()) {
+        if (last_command_rad_.find(channel) == last_command_rad_.end())
+        {
             return 0.0;
         }
 
@@ -120,30 +126,32 @@ private:
     {
         return radian * 180.0 / M_PI;
     }
+    
 
     speed_t baudrateToTermios(int baudrate)
     {
-        switch (baudrate) {
-            case 9600:
-                return B9600;
-            case 19200:
-                return B19200;
-            case 38400:
-                return B38400;
-            case 57600:
-                return B57600;
-            case 115200:
-                return B115200;
-            case 230400:
-                return B230400;
-            case 460800:
-                return B460800;
-            case 921600:
-                return B921600;
-            default:
-                std::cerr << "Unsupported baudrate: " << baudrate
-                          << ", fallback to 115200" << std::endl;
-                return B115200;
+        switch (baudrate)
+        {
+        case 9600:
+            return B9600;
+        case 19200:
+            return B19200;
+        case 38400:
+            return B38400;
+        case 57600:
+            return B57600;
+        case 115200:
+            return B115200;
+        case 230400:
+            return B230400;
+        case 460800:
+            return B460800;
+        case 921600:
+            return B921600;
+        default:
+            std::cerr << "Unsupported baudrate: " << baudrate
+                      << ", fallback to 115200" << std::endl;
+            return B115200;
         }
     }
 
@@ -151,7 +159,8 @@ private:
     {
         struct termios tty;
 
-        if (tcgetattr(serial_fd_, &tty) != 0) {
+        if (tcgetattr(serial_fd_, &tty) != 0)
+        {
             std::cerr << "tcgetattr failed: " << strerror(errno) << std::endl;
             return false;
         }
@@ -168,7 +177,7 @@ private:
         tty.c_oflag = 0;
 
         // Non-blocking read config
-        tty.c_cc[VMIN]  = 0;
+        tty.c_cc[VMIN] = 0;
         tty.c_cc[VTIME] = 5;
 
         // Disable software flow control
@@ -186,7 +195,8 @@ private:
         // No hardware flow control
         tty.c_cflag &= ~CRTSCTS;
 
-        if (tcsetattr(serial_fd_, TCSANOW, &tty) != 0) {
+        if (tcsetattr(serial_fd_, TCSANOW, &tty) != 0)
+        {
             std::cerr << "tcsetattr failed: " << strerror(errno) << std::endl;
             return false;
         }
@@ -194,21 +204,24 @@ private:
         return true;
     }
 
-    bool writeString(const std::string & data)
+    bool writeString(const std::string &data)
     {
-        if (serial_fd_ < 0) {
+        if (serial_fd_ < 0)
+        {
             std::cerr << "Serial port is not open." << std::endl;
             return false;
         }
 
         ssize_t n = write(serial_fd_, data.c_str(), data.size());
 
-        if (n < 0) {
+        if (n < 0)
+        {
             std::cerr << "Serial write failed: " << strerror(errno) << std::endl;
             return false;
         }
 
-        if (static_cast<size_t>(n) != data.size()) {
+        if (static_cast<size_t>(n) != data.size())
+        {
             std::cerr << "Serial write incomplete. Sent "
                       << n << " of " << data.size() << " bytes." << std::endl;
             return false;
