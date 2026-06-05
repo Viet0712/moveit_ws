@@ -59,19 +59,64 @@ public:
         }
     }
 
+    // void setTargetPositionRadian(int channel, double radian)
+    // {
+    //     double degree = radianToDegree(radian);
+
+    //     // Servo thường giới hạn 0–180 độ
+    //     if (degree < 0.0)
+    //     {
+    //         degree = 0.0;
+    //     }
+
+    //     if (degree > 180.0)
+    //     {
+    //         degree = 180.0;
+    //     }
+
+    //     last_command_rad_[channel] = radian;
+    //     last_command_deg_[channel] = degree;
+
+    //     std::ostringstream ss;
+    //     ss << "S," << channel << "," << degree << "\n";
+
+    //     writeString(ss.str());
+    // }
     void setTargetPositionRadian(int channel, double radian)
     {
-        double degree = radianToDegree(radian);
+        const double joint_min_rad = -1.57;
+        const double joint_max_rad = 1.57;
 
-        // Servo thường giới hạn 0–180 độ
-        if (degree < 0.0)
+        const double servo_min_deg = 0.0;
+        const double servo_max_deg = 180.0;
+
+        // Clamp radian trước
+        if (radian < joint_min_rad)
         {
-            degree = 0.0;
+            radian = joint_min_rad;
         }
 
-        if (degree > 180.0)
+        if (radian > joint_max_rad)
         {
-            degree = 180.0;
+            radian = joint_max_rad;
+        }
+
+        // Map -1.57~+1.57 rad sang 0~180 độ
+        double degree =
+            (radian - joint_min_rad) /
+                (joint_max_rad - joint_min_rad) *
+                (servo_max_deg - servo_min_deg) +
+            servo_min_deg;
+
+        // Clamp degree lần nữa cho an toàn
+        if (degree < servo_min_deg)
+        {
+            degree = servo_min_deg;
+        }
+
+        if (degree > servo_max_deg)
+        {
+            degree = servo_max_deg;
         }
 
         last_command_rad_[channel] = radian;
@@ -118,8 +163,8 @@ public:
         const double min_m = 0.0;
         const double max_m = 0.06;
 
-        const double close_deg = 20.;
-        const double open_deg = 110.0;
+        const double close_deg = 0.;
+        const double open_deg = 170.0;
 
         if (position_m < min_m)
         {
@@ -153,7 +198,6 @@ private:
     {
         return radian * 180.0 / M_PI;
     }
-    
 
     speed_t baudrateToTermios(int baudrate)
     {

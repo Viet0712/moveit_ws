@@ -11,7 +11,7 @@
     <node pkg="controller_manager" exec="ros2_control_node" output="screen">
         <param from="$(find-pkg-share my_robot_bringup)/config/ros2_controllers.yaml" />
         <!-- ubuntu 22 -->
-        <remap from="~/robot_description" to="/robot_description" />
+        <!-- <remap from="~/robot_description" to="/robot_description" /> -->
     </node>
 
     <node pkg="controller_manager" exec="spawner" args="joint_state_broadcaster --controller-manager /controller_manager" output="screen" />
