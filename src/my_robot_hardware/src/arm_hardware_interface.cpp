@@ -1,5 +1,9 @@
-
 #include "my_robot_hardware/arm_hardware_interface.hpp"
+
+#include <vector>
+#include <utility>
+#include <cmath>
+#include <limits>
 
 namespace arm_hardware
 {
@@ -26,6 +30,7 @@ namespace arm_hardware
             };
 
             servo_channels_.resize(joint_names_.size());
+
             servo_channels_[1] = std::stoi(info.hardware_parameters.at("joint1_channel"));
             servo_channels_[2] = std::stoi(info.hardware_parameters.at("joint2_channel"));
             servo_channels_[3] = std::stoi(info.hardware_parameters.at("joint3_channel"));
@@ -37,6 +42,7 @@ namespace arm_hardware
                 rclcpp::get_logger("ArmHardwareInterface"),
                 "Failed to read hardware parameters: %s",
                 e.what());
+
             return hardware_interface::CallbackReturn::ERROR;
         }
 
@@ -67,6 +73,7 @@ namespace arm_hardware
             RCLCPP_ERROR(
                 rclcpp::get_logger("ArmHardwareInterface"),
                 "ServoSerialDriver is null");
+
             return hardware_interface::CallbackReturn::ERROR;
         }
 
@@ -75,6 +82,7 @@ namespace arm_hardware
             RCLCPP_ERROR(
                 rclcpp::get_logger("ArmHardwareInterface"),
                 "Failed to initialize ServoSerialDriver");
+
             return hardware_interface::CallbackReturn::ERROR;
         }
 
@@ -167,10 +175,7 @@ namespace arm_hardware
 
         /*
          * Servo SG90 / MG995 / PCA9685 thường không có feedback vị trí thật.
-         * Không nên đọc serial liên tục trong read(), vì sẽ làm nghẽn controller_manager.
-         *
          * Tạm thời cho state bám theo command.
-         * MoveIt và joint_state_broadcaster sẽ thấy robot đang ở vị trí đã command.
          */
         for (size_t i = 0; i < joint_names_.size(); ++i)
         {
@@ -183,40 +188,6 @@ namespace arm_hardware
         return hardware_interface::return_type::OK;
     }
 
-    // hardware_interface::return_type ArmHardwareInterface::write(
-    //     const rclcpp::Time & time,
-    //     const rclcpp::Duration & period)
-    // {
-    //     (void)time;
-    //     (void)period;
-
-    //     if (!driver_) {
-    //         return hardware_interface::return_type::ERROR;
-    //     }
-
-    //     constexpr double EPS = 1e-4;
-
-    //     for (size_t i = 0; i < joint_names_.size(); ++i) {
-    //         if (std::isnan(hw_commands_[i])) {
-    //             continue;
-    //         }
-
-    //         const bool first_command = std::isnan(last_hw_commands_[i]);
-    //         const bool command_changed =
-    //             std::fabs(hw_commands_[i] - last_hw_commands_[i]) > EPS;
-
-    //         if (first_command || command_changed) {
-    //             driver_->setTargetPositionRadian(
-    //                 servo_channels_[i],
-    //                 hw_commands_[i]
-    //             );
-
-    //             last_hw_commands_[i] = hw_commands_[i];
-    //         }
-    //     }
-
-    //     return hardware_interface::return_type::OK;
-    // }
     hardware_interface::return_type ArmHardwareInterface::write(
         const rclcpp::Time &time,
         const rclcpp::Duration &period)
@@ -241,6 +212,16 @@ namespace arm_hardware
 
         last_write_time_ = time;
 
+        /*
+         * ARM batch:
+         * Gom joint1, joint2, joint3 thành 1 gói JSON:
+         * {"cmd":"set_all","servos":[...]}
+         *
+         * Gripper vẫn gửi riêng vì nó dùng đơn vị mét.
+         */
+        std::vector<std::pair<int, double>> arm_batch;
+        std::vector<size_t> arm_batch_indices;
+
         for (size_t i = 0; i < joint_names_.size(); ++i)
         {
             if (std::isnan(hw_commands_[i]))
@@ -248,8 +229,7 @@ namespace arm_hardware
                 continue;
             }
 
-            // EPS riêng cho từng loại joint
-            double eps = 0.02; // rad cho joint quay
+            double eps = 0.0005; // rad cho joint quay
 
             if (joint_names_[i] == "gripper_left_finger_joint")
             {
@@ -260,49 +240,62 @@ namespace arm_hardware
             const double diff = std::fabs(hw_commands_[i] - last_hw_commands_[i]);
             const bool command_changed = diff > eps;
 
-            // RCLCPP_INFO(
-            //     rclcpp::get_logger("ArmHardwareInterface"),
-            //     "[CHECK] joint=%s cmd=%.6f last=%.6f diff=%.6f eps=%.6f first=%d changed=%d",
-            //     joint_names_[i].c_str(),
-            //     hw_commands_[i],
-            //     last_hw_commands_[i],
-            //     diff,
-            //     eps,
-            //     first_command,
-            //     command_changed);
-
-            if (first_command || command_changed)
+            if (!(first_command || command_changed))
             {
-                if (joint_names_[i] == "gripper_left_finger_joint")
-                {
-                    RCLCPP_INFO(
-                        rclcpp::get_logger("ArmHardwareInterface"),
-                        "[WRITE][GRIPPER] joint=%s channel=%d command_m=%.6f last=%.6f",
-                        joint_names_[i].c_str(),
-                        servo_channels_[i],
-                        hw_commands_[i],
-                        last_hw_commands_[i]);
+                continue;
+            }
 
-                    driver_->setGripperPositionMeter(
-                        servo_channels_[i],
-                        hw_commands_[i]);
-                }
-                else
-                {
-                    RCLCPP_INFO(
-                        rclcpp::get_logger("ArmHardwareInterface"),
-                        "[WRITE][ARM] joint=%s channel=%d command_rad=%.6f last=%.6f",
-                        joint_names_[i].c_str(),
-                        servo_channels_[i],
-                        hw_commands_[i],
-                        last_hw_commands_[i]);
+            if (joint_names_[i] == "gripper_left_finger_joint")
+            {
+                RCLCPP_INFO(
+                    rclcpp::get_logger("ArmHardwareInterface"),
+                    "[WRITE][GRIPPER] joint=%s channel=%d command_m=%.6f last=%.6f",
+                    joint_names_[i].c_str(),
+                    servo_channels_[i],
+                    hw_commands_[i],
+                    last_hw_commands_[i]);
 
-                    driver_->setTargetPositionRadian(
-                        servo_channels_[i],
-                        hw_commands_[i]);
-                }
+                driver_->setGripperPositionMeter(
+                    servo_channels_[i],
+                    hw_commands_[i]);
 
                 last_hw_commands_[i] = hw_commands_[i];
+            }
+            else
+            {
+                double degree = driver_->mapJointRadianToDegree(hw_commands_[i]);
+
+                RCLCPP_INFO(
+                    rclcpp::get_logger("ArmHardwareInterface"),
+                    "[BATCH][ARM] joint=%s channel=%d command_rad=%.6f degree=%.3f last=%.6f",
+                    joint_names_[i].c_str(),
+                    servo_channels_[i],
+                    hw_commands_[i],
+                    degree,
+                    last_hw_commands_[i]);
+
+                arm_batch.push_back({servo_channels_[i], degree});
+                arm_batch_indices.push_back(i);
+            }
+        }
+
+        // Sau khi duyệt hết joint, gửi ARM 1 lần duy nhất
+        if (!arm_batch.empty())
+        {
+            bool ok = driver_->sendServoDegreesBatch(arm_batch);
+
+            if (!ok)
+            {
+                RCLCPP_ERROR(
+                    rclcpp::get_logger("ArmHardwareInterface"),
+                    "Failed to send arm batch command");
+
+                return hardware_interface::return_type::ERROR;
+            }
+
+            for (size_t idx : arm_batch_indices)
+            {
+                last_hw_commands_[idx] = hw_commands_[idx];
             }
         }
 

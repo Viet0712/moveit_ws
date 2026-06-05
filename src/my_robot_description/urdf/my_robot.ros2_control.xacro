@@ -13,7 +13,7 @@
             </xacro:if>
             <xacro:unless value="$(arg use_mock_component)">
                 <plugin>arm_hardware/ArmHardwareInterface</plugin>
-                <param name="serial_port">/dev/ttyACM0</param>
+                <param name="serial_port">/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_3C:DC:75:62:AD:B8-if00</param>
                 <param name="baudrate">115200</param>
                 <param name="joint1_channel">1</param>
                 <param name="joint2_channel">2</param>
