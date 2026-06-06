@@ -37,13 +37,13 @@ class ArmCommander(Node):
     def call_back_arm_cmd(self, msg: Float64MultiArray):
         data = list(msg.data)
 
-        if len(data) < 7:
-            self.get_logger().error(
-                f"arm_cmd cần 7 phần tử: "
-                f"[gripper, joint1, joint2, joint3, joint4, joint5, joint6], "
-                f"nhưng nhận {len(data)}"
-            )
-            return
+        # if len(data) < 7:
+        #     self.get_logger().error(
+        #         f"arm_cmd cần 7 phần tử: "
+        #         f"[gripper, joint1, joint2, joint3, joint4, joint5, joint6], "
+        #         f"nhưng nhận {len(data)}"
+        #     )
+        #     return
 
         self.last_pos = data
 
@@ -53,9 +53,9 @@ class ArmCommander(Node):
             f"joint1={data[1]:.3f}, "
             f"joint2={data[2]:.3f}, "
             f"joint3={data[3]:.3f}, "
-            f"joint4={data[4]:.3f}, "
-            f"joint5={data[5]:.3f}, "
-            f"joint6={data[6]:.3f}"
+            # f"joint4={data[4]:.3f}, "
+            # f"joint5={data[5]:.3f}, "
+            # f"joint6={data[6]:.3f}"
         )
 
         self.send_arm_goal(data)
@@ -76,9 +76,9 @@ class ArmCommander(Node):
             "joint1",
             "joint2",
             "joint3",
-            "joint4",
-            "joint5",
-            "joint6",
+            # "joint4",
+            # "joint5",
+            # "joint6",
         ]
 
         point = JointTrajectoryPoint()
@@ -89,9 +89,9 @@ class ArmCommander(Node):
             pos[1],
             pos[2],
             pos[3],
-            pos[4],
-            pos[5],
-            pos[6],
+            # pos[4],
+            # pos[5],
+            # pos[6],
         ]
 
         point.time_from_start.sec = 3

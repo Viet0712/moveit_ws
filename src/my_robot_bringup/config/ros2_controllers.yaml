@@ -20,11 +20,11 @@ arm_controller:
       - joint1
       - joint2
       - joint3
+      - joint4
     command_interfaces:
       - position
     state_interfaces:
       - position
-    allow_nonzero_velocity_at_trajectory_end: true
 gripper_controller:
   ros__parameters:
     joints:
@@ -33,4 +33,3 @@ gripper_controller:
       - position
     state_interfaces:
       - position
-    allow_nonzero_velocity_at_trajectory_end: true

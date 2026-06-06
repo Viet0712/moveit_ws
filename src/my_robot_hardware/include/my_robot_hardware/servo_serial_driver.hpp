@@ -40,17 +40,21 @@ public:
 
         if (serial_fd_ < 0)
         {
-            std::cerr << "Failed to open serial port: " << port_
-                      << " error: " << strerror(errno) << std::endl;
+            std::cerr << "Failed to open serial port: "
+                      << port_
+                      << " error: "
+                      << strerror(errno)
+                      << std::endl;
             return -1;
         }
 
         // Khóa độc quyền serial port.
-        // Tránh Arduino IDE / terminal / process khác mở cùng port.
+        // Tránh Arduino IDE / Serial Monitor / node khác mở cùng port.
         if (ioctl(serial_fd_, TIOCEXCL) != 0)
         {
             std::cerr << "Warning: failed to set exclusive mode: "
-                      << strerror(errno) << std::endl;
+                      << strerror(errno)
+                      << std::endl;
         }
 
         if (!configurePort(baudrate_))
@@ -63,20 +67,38 @@ public:
         // Quan trọng với ESP32-S3 USB CDC / JTAG serial
         setDtrRts(true, true);
 
-        // Xóa dữ liệu cũ trong buffer
+        // Xóa buffer cũ
         tcflush(serial_fd_, TCIOFLUSH);
 
         // ESP32-S3 cần thời gian ổn định sau khi mở port
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+
+        // Xóa tiếp dữ liệu ready/init cũ nếu có
+        readAvailableLines();
 
         std::cout << "ServoSerialDriver connected to "
-                  << port_ << " at " << baudrate_ << std::endl;
+                  << port_
+                  << " at "
+                  << baudrate_
+                  << std::endl;
 
-        // Test packet
         sendPing();
 
         return 0;
     }
+
+    void closePort()
+    {
+        std::lock_guard<std::mutex> lock(write_mutex_);
+
+        if (serial_fd_ >= 0)
+        {
+            tcdrain(serial_fd_);
+            close(serial_fd_);
+            serial_fd_ = -1;
+        }
+    }
+
     double mapJointRadianToDegree(double radian)
     {
         const double joint_min_rad = -1.57;
@@ -95,17 +117,7 @@ public:
 
         return clampDouble(degree, servo_min_deg, servo_max_deg);
     }
-    void closePort()
-    {
-        std::lock_guard<std::mutex> lock(write_mutex_);
 
-        if (serial_fd_ >= 0)
-        {
-            tcdrain(serial_fd_);
-            close(serial_fd_);
-            serial_fd_ = -1;
-        }
-    }
     bool sendServoDegreesBatch(const std::vector<std::pair<int, double>> &commands)
     {
         if (commands.empty())
@@ -129,7 +141,8 @@ public:
             if (channel < 0 || channel > 15)
             {
                 std::cerr << "Invalid servo channel in batch: "
-                          << channel << std::endl;
+                          << channel
+                          << std::endl;
                 continue;
             }
 
@@ -140,7 +153,8 @@ public:
 
             ss << "{";
             ss << "\"channel\":" << channel << ",";
-            ss << "\"degree\":" << degree;
+            ss << "\"degree\":" << degree << ",";
+            ss << "\"speed\":60";
             ss << "}";
 
             first = false;
@@ -149,31 +163,27 @@ public:
         ss << "]";
         ss << "}\n";
 
-        return writeString(ss.str());
+        bool ok = writeString(ss.str());
+
+        if (ok)
+        {
+            for (const auto &cmd : commands)
+            {
+                int channel = cmd.first;
+                double degree = clampDouble(cmd.second, 0.0, 180.0);
+
+                if (channel >= 0 && channel <= 15)
+                {
+                    last_command_deg_[channel] = degree;
+                }
+            }
+        }
+
+        return ok;
     }
 
     void setTargetPositionRadian(int channel, double radian)
     {
-        // const double joint_min_rad = -1.57;
-        // const double joint_max_rad = 1.57;
-
-        // const double servo_min_deg = 0.0;
-        // const double servo_max_deg = 180.0;
-
-        // radian = clampDouble(radian, joint_min_rad, joint_max_rad);
-
-        // double degree =
-        //     (radian - joint_min_rad) /
-        //         (joint_max_rad - joint_min_rad) *
-        //         (servo_max_deg - servo_min_deg) +
-        //     servo_min_deg;
-
-        // degree = clampDouble(degree, servo_min_deg, servo_max_deg);
-
-        // if (sendServoDegree(channel, degree))
-        // {
-        //     last_command_rad_[channel] = radian;
-        // }
         radian = clampDouble(radian, -1.57, 1.57);
 
         double degree = mapJointRadianToDegree(radian);
@@ -186,10 +196,8 @@ public:
 
     double getMeasuredPositionRadian(int channel)
     {
-        /*
-         * Chưa có encoder feedback:
-         * trả về command cuối cùng.
-         */
+        // Chưa có encoder feedback:
+        // trả về command cuối cùng.
 
         if (last_command_rad_.find(channel) == last_command_rad_.end())
         {
@@ -199,25 +207,7 @@ public:
         return last_command_rad_[channel];
     }
 
-    void deactivate(int channel)
-    {
-        if (channel < 0 || channel > 15)
-        {
-            std::cerr << "Invalid servo channel: " << channel << std::endl;
-            return;
-        }
-
-        std::ostringstream ss;
-
-        ss << "{";
-        ss << "\"cmd\":\"deactivate\",";
-        ss << "\"channel\":" << channel;
-        ss << "}\n";
-
-        writeString(ss.str());
-    }
-
-    void setGripperPositionMeter(int channel, double position_m)
+    bool setGripperPositionMeter(int channel, double position_m)
     {
         const double min_m = 0.0;
         const double max_m = 0.06;
@@ -230,7 +220,47 @@ public:
         double ratio = (position_m - min_m) / (max_m - min_m);
         double degree = close_deg + ratio * (open_deg - close_deg);
 
-        sendServoDegree(channel, degree);
+        return sendServoDegree(channel, degree);
+    }
+
+    bool deactivate(int channel)
+    {
+        if (channel < 0 || channel > 15)
+        {
+            std::cerr << "Invalid servo channel: "
+                      << channel
+                      << std::endl;
+            return false;
+        }
+
+        std::ostringstream ss;
+
+        ss << "{";
+        ss << "\"cmd\":\"deactivate\",";
+        ss << "\"channel\":" << channel;
+        ss << "}\n";
+
+        return writeString(ss.str());
+    }
+
+    bool activate(int channel)
+    {
+        if (channel < 0 || channel > 15)
+        {
+            std::cerr << "Invalid servo channel: "
+                      << channel
+                      << std::endl;
+            return false;
+        }
+
+        std::ostringstream ss;
+
+        ss << "{";
+        ss << "\"cmd\":\"activate\",";
+        ss << "\"channel\":" << channel;
+        ss << "}\n";
+
+        return writeString(ss.str());
     }
 
     bool sendPing()
@@ -264,11 +294,6 @@ private:
         return value;
     }
 
-    double radianToDegree(double radian)
-    {
-        return radian * 180.0 / M_PI;
-    }
-
     speed_t baudrateToTermios(int baudrate)
     {
         switch (baudrate)
@@ -290,8 +315,10 @@ private:
         case 921600:
             return B921600;
         default:
-            std::cerr << "Unsupported baudrate: " << baudrate
-                      << ", fallback to 115200" << std::endl;
+            std::cerr << "Unsupported baudrate: "
+                      << baudrate
+                      << ", fallback to 115200"
+                      << std::endl;
             return B115200;
         }
     }
@@ -302,7 +329,9 @@ private:
 
         if (tcgetattr(serial_fd_, &tty) != 0)
         {
-            std::cerr << "tcgetattr failed: " << strerror(errno) << std::endl;
+            std::cerr << "tcgetattr failed: "
+                      << strerror(errno)
+                      << std::endl;
             return false;
         }
 
@@ -332,11 +361,13 @@ private:
 
         // Non-blocking-ish read config
         tty.c_cc[VMIN] = 0;
-        tty.c_cc[VTIME] = 5;
+        tty.c_cc[VTIME] = 1;
 
         if (tcsetattr(serial_fd_, TCSANOW, &tty) != 0)
         {
-            std::cerr << "tcsetattr failed: " << strerror(errno) << std::endl;
+            std::cerr << "tcsetattr failed: "
+                      << strerror(errno)
+                      << std::endl;
             return false;
         }
 
@@ -347,7 +378,8 @@ private:
     {
         if (serial_fd_ < 0)
         {
-            std::cerr << "Serial port is not open, cannot set DTR/RTS." << std::endl;
+            std::cerr << "Serial port is not open, cannot set DTR/RTS."
+                      << std::endl;
             return false;
         }
 
@@ -356,7 +388,8 @@ private:
         if (ioctl(serial_fd_, TIOCMGET, &status) != 0)
         {
             std::cerr << "Warning: failed to get modem status: "
-                      << strerror(errno) << std::endl;
+                      << strerror(errno)
+                      << std::endl;
             return false;
         }
 
@@ -381,7 +414,8 @@ private:
         if (ioctl(serial_fd_, TIOCMSET, &status) != 0)
         {
             std::cerr << "Warning: failed to set DTR/RTS: "
-                      << strerror(errno) << std::endl;
+                      << strerror(errno)
+                      << std::endl;
             return false;
         }
 
@@ -392,7 +426,9 @@ private:
     {
         if (channel < 0 || channel > 15)
         {
-            std::cerr << "Invalid servo channel: " << channel << std::endl;
+            std::cerr << "Invalid servo channel: "
+                      << channel
+                      << std::endl;
             return false;
         }
 
@@ -415,7 +451,8 @@ private:
         ss << "{";
         ss << "\"cmd\":\"servo\",";
         ss << "\"channel\":" << channel << ",";
-        ss << "\"degree\":" << degree;
+        ss << "\"degree\":" << degree << ",";
+        ss << "\"speed\":60";
         ss << "}\n";
 
         bool ok = writeString(ss.str());
@@ -434,7 +471,8 @@ private:
 
         if (serial_fd_ < 0)
         {
-            std::cerr << "Serial port is not open." << std::endl;
+            std::cerr << "Serial port is not open."
+                      << std::endl;
             return false;
         }
 
@@ -444,7 +482,8 @@ private:
             log_data.pop_back();
         }
 
-        std::cout << "Serial TX: [" << log_data << "]" << std::endl;
+        std::cout << "Serial TX: [" << log_data << "]"
+                  << std::endl;
 
         const char *buffer = data.c_str();
         size_t total_size = data.size();
@@ -465,13 +504,15 @@ private:
                 }
 
                 std::cerr << "Serial write failed: "
-                          << strerror(errno) << std::endl;
+                          << strerror(errno)
+                          << std::endl;
                 return false;
             }
 
             if (n == 0)
             {
-                std::cerr << "Serial write returned 0 bytes." << std::endl;
+                std::cerr << "Serial write returned 0 bytes."
+                          << std::endl;
                 return false;
             }
 
@@ -481,15 +522,46 @@ private:
         if (tcdrain(serial_fd_) != 0)
         {
             std::cerr << "Warning: tcdrain failed: "
-                      << strerror(errno) << std::endl;
+                      << strerror(errno)
+                      << std::endl;
             return false;
         }
 
-        // Khoảng nghỉ rất nhỏ để ESP32 kịp xử lý dòng JSON.
-        // Có thể giảm xuống 500 nếu muốn nhanh hơn.
-        std::this_thread::sleep_for(std::chrono::microseconds(1000));
+        // Cho ESP32 đủ thời gian xử lý 1 dòng JSON.
+        // Tránh set_all và deactivate/servo dính vào nhau.
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        readAvailableLines();
 
         return true;
+    }
+
+    void readAvailableLines()
+    {
+        if (serial_fd_ < 0)
+        {
+            return;
+        }
+
+        char buf[256];
+
+        while (true)
+        {
+            ssize_t n = read(serial_fd_, buf, sizeof(buf) - 1);
+
+            if (n > 0)
+            {
+                buf[n] = '\0';
+                std::cout << "Serial RX: ["
+                          << buf
+                          << "]"
+                          << std::endl;
+            }
+            else
+            {
+                break;
+            }
+        }
     }
 };
 

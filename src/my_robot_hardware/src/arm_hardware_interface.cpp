@@ -27,6 +27,7 @@ namespace arm_hardware
                 "joint1",
                 "joint2",
                 "joint3",
+                "joint4",
             };
 
             servo_channels_.resize(joint_names_.size());
@@ -34,6 +35,7 @@ namespace arm_hardware
             servo_channels_[1] = std::stoi(info.hardware_parameters.at("joint1_channel"));
             servo_channels_[2] = std::stoi(info.hardware_parameters.at("joint2_channel"));
             servo_channels_[3] = std::stoi(info.hardware_parameters.at("joint3_channel"));
+            servo_channels_[4] = std::stoi(info.hardware_parameters.at("joint4_channel"));
             servo_channels_[0] = std::stoi(info.hardware_parameters.at("gripper_channel"));
         }
         catch (const std::exception &e)
@@ -199,37 +201,87 @@ namespace arm_hardware
             return hardware_interface::return_type::ERROR;
         }
 
-        // Giới hạn tần suất gửi serial
-        if (last_write_time_.nanoseconds() != 0)
-        {
-            double dt = (time - last_write_time_).seconds();
+        /*
+         * FINAL COMMAND MODE:
+         * Không gửi liên tục từng điểm nội suy từ trajectory_controller.
+         * Chỉ lưu command mới nhất vào pending_hw_commands_.
+         * Khi command không đổi trong final_command_wait_sec_,
+         * mới gửi 1 lần vị trí cuối xuống ESP32.
+         */
 
-            if (dt < serial_write_period_sec_)
-            {
-                return hardware_interface::return_type::OK;
-            }
+        if (pending_hw_commands_.size() != hw_commands_.size())
+        {
+            pending_hw_commands_ = hw_commands_;
+            has_pending_command_ = true;
+            last_command_change_time_ = time;
+
+            return hardware_interface::return_type::OK;
         }
 
-        last_write_time_ = time;
+        bool command_is_changing = false;
 
-        /*
-         * ARM batch:
-         * Gom joint1, joint2, joint3 thành 1 gói JSON:
-         * {"cmd":"set_all","servos":[...]}
-         *
-         * Gripper vẫn gửi riêng vì nó dùng đơn vị mét.
-         */
-        std::vector<std::pair<int, double>> arm_batch;
-        std::vector<size_t> arm_batch_indices;
-
-        for (size_t i = 0; i < joint_names_.size(); ++i)
+        for (size_t i = 0; i < hw_commands_.size(); ++i)
         {
             if (std::isnan(hw_commands_[i]))
             {
                 continue;
             }
 
-            double eps = 0.0005; // rad cho joint quay
+            double eps = pending_eps_rad_;
+
+            if (joint_names_[i] == "gripper_left_finger_joint")
+            {
+                eps = pending_eps_gripper_m_;
+            }
+
+            if (std::isnan(pending_hw_commands_[i]) ||
+                std::fabs(hw_commands_[i] - pending_hw_commands_[i]) > eps)
+            {
+                command_is_changing = true;
+                break;
+            }
+        }
+
+        if (command_is_changing)
+        {
+            pending_hw_commands_ = hw_commands_;
+            has_pending_command_ = true;
+            last_command_change_time_ = time;
+
+            return hardware_interface::return_type::OK;
+        }
+
+        if (!has_pending_command_)
+        {
+            return hardware_interface::return_type::OK;
+        }
+
+        double stable_time = (time - last_command_change_time_).seconds();
+
+        if (stable_time < final_command_wait_sec_)
+        {
+            return hardware_interface::return_type::OK;
+        }
+
+        /*
+         * Tới đây nghĩa là command đã ổn định đủ lâu.
+         * Bắt đầu gửi đúng 1 lần vị trí cuối.
+         */
+
+        std::vector<std::pair<int, double>> arm_batch;
+        std::vector<size_t> arm_batch_indices;
+
+        bool gripper_sent = false;
+        size_t gripper_index = 0;
+
+        for (size_t i = 0; i < joint_names_.size(); ++i)
+        {
+            if (std::isnan(pending_hw_commands_[i]))
+            {
+                continue;
+            }
+
+            double eps = 0.01; // rad cho joint quay
 
             if (joint_names_[i] == "gripper_left_finger_joint")
             {
@@ -237,7 +289,7 @@ namespace arm_hardware
             }
 
             const bool first_command = std::isnan(last_hw_commands_[i]);
-            const double diff = std::fabs(hw_commands_[i] - last_hw_commands_[i]);
+            const double diff = std::fabs(pending_hw_commands_[i] - last_hw_commands_[i]);
             const bool command_changed = diff > eps;
 
             if (!(first_command || command_changed))
@@ -249,28 +301,38 @@ namespace arm_hardware
             {
                 RCLCPP_INFO(
                     rclcpp::get_logger("ArmHardwareInterface"),
-                    "[WRITE][GRIPPER] joint=%s channel=%d command_m=%.6f last=%.6f",
+                    "[FINAL][GRIPPER] joint=%s channel=%d command_m=%.6f last=%.6f",
                     joint_names_[i].c_str(),
                     servo_channels_[i],
-                    hw_commands_[i],
+                    pending_hw_commands_[i],
                     last_hw_commands_[i]);
 
-                driver_->setGripperPositionMeter(
+                const bool ok = driver_->setGripperPositionMeter(
                     servo_channels_[i],
-                    hw_commands_[i]);
+                    pending_hw_commands_[i]);
 
-                last_hw_commands_[i] = hw_commands_[i];
+                if (!ok)
+                {
+                    RCLCPP_ERROR(
+                        rclcpp::get_logger("ArmHardwareInterface"),
+                        "Failed to send gripper final command");
+
+                    return hardware_interface::return_type::ERROR;
+                }
+
+                gripper_sent = true;
+                gripper_index = i;
             }
             else
             {
-                double degree = driver_->mapJointRadianToDegree(hw_commands_[i]);
+                double degree = driver_->mapJointRadianToDegree(pending_hw_commands_[i]);
 
                 RCLCPP_INFO(
                     rclcpp::get_logger("ArmHardwareInterface"),
-                    "[BATCH][ARM] joint=%s channel=%d command_rad=%.6f degree=%.3f last=%.6f",
+                    "[FINAL][ARM] joint=%s channel=%d command_rad=%.6f degree=%.3f last=%.6f",
                     joint_names_[i].c_str(),
                     servo_channels_[i],
-                    hw_commands_[i],
+                    pending_hw_commands_[i],
                     degree,
                     last_hw_commands_[i]);
 
@@ -279,25 +341,35 @@ namespace arm_hardware
             }
         }
 
-        // Sau khi duyệt hết joint, gửi ARM 1 lần duy nhất
         if (!arm_batch.empty())
         {
-            bool ok = driver_->sendServoDegreesBatch(arm_batch);
+            const bool ok = driver_->sendServoDegreesBatch(arm_batch);
 
             if (!ok)
             {
                 RCLCPP_ERROR(
                     rclcpp::get_logger("ArmHardwareInterface"),
-                    "Failed to send arm batch command");
+                    "Failed to send arm final batch command");
 
                 return hardware_interface::return_type::ERROR;
             }
 
             for (size_t idx : arm_batch_indices)
             {
-                last_hw_commands_[idx] = hw_commands_[idx];
+                last_hw_commands_[idx] = pending_hw_commands_[idx];
             }
         }
+
+        if (gripper_sent)
+        {
+            last_hw_commands_[gripper_index] = pending_hw_commands_[gripper_index];
+        }
+
+        /*
+         * Đã gửi xong vị trí cuối.
+         * Reset pending để không gửi lặp lại.
+         */
+        has_pending_command_ = false;
 
         return hardware_interface::return_type::OK;
     }
