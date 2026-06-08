@@ -85,11 +85,17 @@ void setup()
   targetDegree[4] = 90.0;
   servoActive[4] = true;
 
-  writeServoRaw(0, currentDegree[0]);
-  writeServoRaw(1, currentDegree[1]);
-  writeServoRaw(2, currentDegree[2]);
-  writeServoRaw(3, currentDegree[3]);
-  writeServoRaw(4, currentDegree[4]);
+  currentDegree[5] = 90.0;    // joint5
+  targetDegree[5] = 90.0;
+  servoActive[5] = true;
+
+  // Ghi vị trí ban đầu ra servo
+  writeServoRaw(0, currentDegree[0]);   // gripper
+  writeServoRaw(1, currentDegree[1]);   // joint1
+  writeServoRaw(2, currentDegree[2]);   // joint2
+  writeServoRaw(3, currentDegree[3]);   // joint3
+  writeServoRaw(4, currentDegree[4]);   // joint4
+  writeServoRaw(5, currentDegree[5]);   // joint5
 
   lastUpdateMs = millis();
 

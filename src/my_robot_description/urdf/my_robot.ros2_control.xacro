@@ -18,7 +18,7 @@
                 <param name="joint2_channel">2</param>
                 <param name="joint3_channel">3</param>
                 <param name="joint4_channel">4</param>
-                <param name="joint4_channel">5</param>
+                <param name="joint5_channel">5</param>
                 <param name="gripper_channel">0</param>
             </xacro:unless>
         </hardware>
