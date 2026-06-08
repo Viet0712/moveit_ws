@@ -1,16 +1,16 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-    <xacro:arg name="use_mock_component" default="true"/>
+    <xacro:arg name="use_sim" default="true"/>
     <ros2_control name="Amr" type="system">
         <!-- <hardware>
            
             <plugin>mock_components/GenericSystem</plugin>
         </hardware> -->
         <hardware>
-            <xacro:if value="$(arg use_mock_component)">
+            <xacro:if value="$(arg use_sim)">
                 <plugin>mock_components/GenericSystem</plugin>
             </xacro:if>
-            <xacro:unless value="$(arg use_mock_component)">
+            <xacro:unless value="$(arg use_sim)">
                 <plugin>arm_hardware/ArmHardwareInterface</plugin>
                 <param name="serial_port">/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_3C:DC:75:62:AD:B8-if00</param>
                 <param name="baudrate">115200</param>
@@ -18,6 +18,7 @@
                 <param name="joint2_channel">2</param>
                 <param name="joint3_channel">3</param>
                 <param name="joint4_channel">4</param>
+                <param name="joint4_channel">5</param>
                 <param name="gripper_channel">0</param>
             </xacro:unless>
         </hardware>
@@ -40,6 +41,12 @@
             </state_interface>
         </joint>
         <joint name="joint4">
+            <command_interface name="position"/>
+            <state_interface name="position">
+                <param name="initial_value">0.0</param>
+            </state_interface>
+        </joint>
+        <joint name="joint5">
             <command_interface name="position"/>
             <state_interface name="position">
                 <param name="initial_value">0.0</param>

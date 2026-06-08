@@ -2,10 +2,10 @@
     <let name="urdf_path" value="$(find-pkg-share my_robot_description)/urdf/my_robot.urdf.xacro"/>
     <let name="rviz_config_path" value="$(find-pkg-share my_robot_bringup)/config/my_robot_moveit.rviz"/>
 
-    <arg name="use_mock_component" default="true" />
+    <arg name="use_sim" default="true" />
 
     <node pkg="robot_state_publisher" exec="robot_state_publisher" output="screen">
-        <param name="robot_description" value="$(command 'xacro $(var urdf_path) use_mock_component:=$(var use_mock_component)')" />
+        <param name="robot_description" value="$(command 'xacro $(var urdf_path) use_sim:=$(var use_sim)')" />
     </node>
 
     <node pkg="controller_manager" exec="ros2_control_node" output="screen">

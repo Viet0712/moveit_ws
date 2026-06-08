@@ -28,6 +28,7 @@ namespace arm_hardware
                 "joint2",
                 "joint3",
                 "joint4",
+                "joint5",
             };
 
             servo_channels_.resize(joint_names_.size());
@@ -36,6 +37,7 @@ namespace arm_hardware
             servo_channels_[2] = std::stoi(info.hardware_parameters.at("joint2_channel"));
             servo_channels_[3] = std::stoi(info.hardware_parameters.at("joint3_channel"));
             servo_channels_[4] = std::stoi(info.hardware_parameters.at("joint4_channel"));
+            servo_channels_[5] = std::stoi(info.hardware_parameters.at("joint5_channel"));
             servo_channels_[0] = std::stoi(info.hardware_parameters.at("gripper_channel"));
         }
         catch (const std::exception &e)
